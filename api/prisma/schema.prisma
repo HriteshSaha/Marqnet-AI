@@ -1,0 +1,530 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Business type of the top-level tenant (EP-01-US-01).
+enum OrganizationType {
+  AGENCY
+  DIRECT_BRAND
+}
+
+/// Identifies the 3 protected roles seeded for every Organization (EP-03-US-01).
+/// Distinct from custom roles, which have systemKey = null.
+enum SystemRoleKey {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+/// A single grantable action within a module. MANAGE is a wildcard meaning
+/// "every action" within whatever module(s) the grant applies to.
+enum PermissionAction {
+  READ
+  CREATE
+  EDIT
+  DELETE
+  EXPORT
+  MANAGE
+}
+
+/// Lifecycle state of a Client/brand workspace (EP-01-US-02).
+enum ClientStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/// Whether a Membership can see every Client in the org, or only the ones
+/// explicitly listed in its MembershipClientAccess rows (EP-03-US-02).
+enum ClientAccessScope {
+  ALL
+  RESTRICTED
+}
+
+/// A step of the per-client onboarding wizard (EP-04-US-01). Each is saved
+/// independently so progress is never lost.
+enum OnboardingStep {
+  BUSINESS_PROFILE
+  GOALS_AND_KPIS
+  CHANNELS
+  AUDIENCE_AND_GEOGRAPHY
+  BUDGET
+  COMPETITORS
+}
+
+/// Marketing channel a client is active on. Drives which onboarding steps
+/// become required (e.g. any paid channel requires a Budget range).
+enum MarketingChannel {
+  SEO
+  GOOGLE_ADS
+  META_ADS
+  MICROSOFT_ADS
+  LINKEDIN_ADS
+  TIKTOK_ADS
+  YOUTUBE_ADS
+  EMAIL_MARKETING
+}
+
+enum BusinessGoal {
+  LEAD_GENERATION
+  ECOMMERCE_SALES
+  BRAND_AWARENESS
+  APP_INSTALLS
+  FOOT_TRAFFIC
+  CUSTOMER_RETENTION
+}
+
+/// Which metric a KPI target is expressed in. The actual target/range values
+/// are configured separately (EP-04-US-02); this just says which KPIs matter.
+enum KpiType {
+  CPA
+  ROAS
+  REVENUE
+  LEADS
+  TRAFFIC
+  CONVERSION_RATE
+  BRAND_AWARENESS_LIFT
+}
+
+/// A metric that can carry a configured business guardrail (EP-04-US-02).
+/// Deliberately a separate enum from KpiType: KpiType just says "this metric
+/// matters" during onboarding, GuardrailMetric carries an actual target/range.
+enum GuardrailMetric {
+  CPA
+  ROAS
+  REVENUE
+  BUDGET
+  LEAD_QUALITY_SCORE
+}
+
+/// Category of a recorded compliance/brand restriction (EP-04-US-03).
+enum ComplianceCategory {
+  REGULATED_INDUSTRY
+  FINANCIAL_SERVICES
+  HEALTHCARE
+  LEGAL
+  ALCOHOL
+  GAMBLING
+  CANNABIS
+  PROHIBITED_CLAIMS
+  PROHIBITED_KEYWORDS
+  BRAND_RESTRICTION
+  DATA_PRIVACY
+  OTHER
+}
+
+/// Severity of an action requiring approval (EP-03-US-03).
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ApprovalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalDecisionValue {
+  APPROVED
+  REJECTED
+}
+
+/// Tenant root. All data in the system is scoped under an Organization.
+model Organization {
+  id        String           @id @default(uuid())
+  name      String
+  slug      String           @unique
+  type      OrganizationType
+  locale    String           @default("en-US")
+  currency  String           @default("USD")
+  timezone  String           @default("UTC")
+  archivedAt DateTime?
+  /// EP-02-US-01: overrides the platform-default session lifetime while this
+  /// workspace is active. Null means "use the platform default".
+  sessionTtlMinutes Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  auditLogs   AuditLog[]
+  clients     Client[]
+  roles       Role[]
+  usersWithThisAsLastSelected User[]
+  approvalPolicy   ApprovalPolicy?
+  approvalRequests ApprovalRequest[]
+
+  @@map("organizations")
+}
+
+/// Org-wide approval authority configuration (EP-03-US-03). Lazily created
+/// with sensible defaults the first time it's read or edited.
+model ApprovalPolicy {
+  id             String  @id @default(uuid())
+  organizationId String  @unique
+  /// Whether the person who created a request may also decide on it.
+  allowSelfApproval Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  thresholds   ApprovalThreshold[]
+
+  @@map("approval_policies")
+}
+
+/// Per-risk-level authority: which Roles may decide, and whether a second,
+/// distinct qualifying approver is required before the request is approved.
+model ApprovalThreshold {
+  id        String    @id @default(uuid())
+  policyId  String
+  riskLevel RiskLevel
+  dualApprovalRequired Boolean @default(false)
+  /// Role ids (within the same organization) eligible to decide at this risk
+  /// level. Plain string array rather than a join table — validated against
+  /// the organization's roles in the service layer, same approach as
+  /// RolePermission.module's free-form keys.
+  roleIds   String[]
+
+  policy ApprovalPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, riskLevel])
+  @@map("approval_thresholds")
+}
+
+/// A pending or decided request for a sensitive action to be approved
+/// (EP-03-US-03). Reusable scaffold: future features (negative-keyword
+/// application, budget changes, etc.) create one of these instead of each
+/// re-implementing approval logic.
+model ApprovalRequest {
+  id                String                @id @default(uuid())
+  organizationId    String
+  riskLevel         RiskLevel
+  /// Free-form key identifying what kind of action this is, e.g. "client.archive".
+  actionType        String
+  summary           String
+  payload           Json?
+  requestedByUserId String
+  status            ApprovalRequestStatus @default(PENDING)
+  /// Set by the requesting feature once it has applied the effect of an
+  /// APPROVED request (e.g. actually retiring a compliance constraint) — not
+  /// by ApprovalsService itself, which stays generic. Prevents replaying the
+  /// same approval to apply an effect twice.
+  consumedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestedBy  User                @relation(fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  decisions    ApprovalDecision[]
+
+  @@index([organizationId, status])
+  @@map("approval_requests")
+}
+
+/// One approver's decision on an ApprovalRequest. Immutable once created —
+/// "Approval decision stores actor/time/comment" (EP-03-US-03).
+model ApprovalDecision {
+  id          String                @id @default(uuid())
+  requestId   String
+  actorUserId String
+  decision    ApprovalDecisionValue
+  comment     String?
+
+  createdAt DateTime @default(now())
+
+  request ApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actor   User            @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@unique([requestId, actorUserId])
+  @@index([requestId])
+  @@map("approval_decisions")
+}
+
+/// A role (system-seeded or custom) granting a set of module/action
+/// permissions within one Organization (EP-03-US-01).
+model Role {
+  id             String         @id @default(uuid())
+  organizationId String
+  name           String
+  /// System roles (Owner/Admin/Member) are seeded per-organization and
+  /// protected from renaming, deletion, and permission edits via the API.
+  isSystem       Boolean        @default(false)
+  systemKey      SystemRoleKey?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permissions  RolePermission[]
+  memberships  Membership[]
+
+  @@unique([organizationId, name])
+  @@unique([organizationId, systemKey])
+  @@index([organizationId])
+  @@map("roles")
+}
+
+/// One module/action grant for a Role. `module` is a free-form key (not a
+/// Prisma enum) because the module catalog grows with every epic — adding a
+/// new one must not require a schema migration. "*" means every module.
+model RolePermission {
+  id     String           @id @default(uuid())
+  roleId String
+  module String
+  action PermissionAction
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, module, action])
+  @@map("role_permissions")
+}
+
+/// A client or brand workspace managed under an agency/direct-brand Organization.
+model Client {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  slug           String
+  status         ClientStatus @default(ACTIVE)
+  archivedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membershipAccess MembershipClientAccess[]
+  onboarding       ClientOnboarding?
+  kpiGuardrails    KpiGuardrail[]
+  complianceConstraints ComplianceConstraint[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status])
+  @@map("clients")
+}
+
+/// A platform user. Authentication identity, independent of tenant.
+model User {
+  id                        String    @id @default(uuid())
+  email                     String    @unique
+  passwordHash              String
+  fullName                  String?
+  /// Last organization the user switched into (EP-01-US-03); purely a UX default,
+  /// never trusted for authorization — every request re-checks Membership.
+  lastSelectedOrganizationId String?
+
+  /// TOTP secret (base32), set once MFA setup begins. Not cleared until the
+  /// user disables MFA, so a half-finished setup can be resumed/overwritten.
+  mfaSecret  String?
+  mfaEnabled Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships          Membership[]
+  auditLogs            AuditLog[]
+  sessions             Session[]
+  lastSelectedOrganization Organization? @relation(fields: [lastSelectedOrganizationId], references: [id], onDelete: SetNull)
+  approvalRequestsMade ApprovalRequest[]
+  approvalDecisions    ApprovalDecision[]
+
+  @@map("users")
+}
+
+/// A persisted, revocable authentication session (EP-02-US-01 / EP-02-US-03).
+/// The JWT embeds the session id (`sid`); every request validates it is
+/// neither expired nor revoked, so revocation takes effect immediately even
+/// though the token itself is stateless and otherwise still cryptographically valid.
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Join table granting a User a Role within an Organization (tenant scoping).
+model Membership {
+  id             String   @id @default(uuid())
+  userId         String
+  organizationId String
+  roleId         String
+  /// EP-03-US-02: ALL (default) sees every client in the org; RESTRICTED sees
+  /// only those listed in `clientAccess`.
+  clientAccessScope ClientAccessScope @default(ALL)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  clientAccess MembershipClientAccess[]
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([roleId])
+  @@map("memberships")
+}
+
+/// One explicitly-granted Client for a RESTRICTED Membership (EP-03-US-02).
+/// Irrelevant (and ignored) while the membership's scope is ALL.
+model MembershipClientAccess {
+  id           String   @id @default(uuid())
+  membershipId String
+  clientId     String
+  createdAt    DateTime @default(now())
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, clientId])
+  @@index([membershipId])
+  @@map("membership_client_access")
+}
+
+/// Immutable record of sensitive actions (EP-36). Append-only by convention.
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?
+  actorUserId    String?
+  action         String
+  targetType     String
+  targetId       String?
+  metadata       Json?
+
+  createdAt DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("audit_logs")
+}
+
+/// Per-client onboarding wizard state (EP-04-US-01). One row per Client,
+/// lazily created on first save. Every field is nullable/empty-by-default so
+/// each step can be saved independently without the others being filled in —
+/// "the wizard saves progress" is just this row being updated incrementally.
+model ClientOnboarding {
+  id       String @id @default(uuid())
+  clientId String @unique
+
+  // Step: BUSINESS_PROFILE
+  businessDescription String?
+  website             String?
+  industry            String?
+  productsServices    String?
+  brandVoice          String?
+
+  // Step: GOALS_AND_KPIS
+  primaryGoal    BusinessGoal?
+  secondaryGoals BusinessGoal[]
+  primaryKpi     KpiType?
+  secondaryKpis  KpiType[]
+
+  // Step: CHANNELS
+  channels MarketingChannel[]
+
+  // Step: AUDIENCE_AND_GEOGRAPHY
+  targetGeographies String[]
+  targetAudience    String?
+
+  // Step: BUDGET (approximate planning range, not a financial ledger — Float is sufficient)
+  budgetMin Float?
+  budgetMax Float?
+
+  // Step: COMPETITORS (lightweight list; full competitor intelligence is EP-16)
+  competitors String[]
+
+  /// Steps explicitly saved at least once. Drives the completion score.
+  completedSteps OnboardingStep[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("client_onboarding")
+}
+
+/// A versioned business-performance target for one metric on one Client
+/// (EP-04-US-02). Never overwritten in place: setting a new target for a
+/// metric closes out the previous row (isCurrent=false, supersededAt set)
+/// and inserts the next version, so "historical target changes are retained"
+/// is just the natural row history rather than a separate audit mechanism.
+model KpiGuardrail {
+  id              String          @id @default(uuid())
+  clientId        String
+  metric          GuardrailMetric
+  targetValue     Float
+  acceptableMin   Float
+  acceptableMax   Float
+  /// Resolved at save time: the value the caller passed, or the owning
+  /// Organization's currency when none was given ("inherited unless overridden").
+  currency        String
+  version         Int
+  isCurrent       Boolean         @default(true)
+  supersededAt    DateTime?
+  createdByUserId String
+
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, metric, version])
+  @@index([clientId, metric, isCurrent])
+  @@map("kpi_guardrails")
+}
+
+/// A versioned compliance/brand restriction for one Client (EP-04-US-03).
+/// Like KpiGuardrail, never overwritten in place — tightening a category
+/// (or creating it fresh) supersedes the previous version directly; loosening
+/// or removing an active constraint ("an override") instead requires going
+/// through the ApprovalRequest workflow (EP-03-US-03) before it takes effect.
+model ComplianceConstraint {
+  id          String             @id @default(uuid())
+  clientId    String
+  category    ComplianceCategory
+  description String
+  riskLevel   RiskLevel
+  /// Forced true whenever riskLevel is HIGH or CRITICAL — "high-risk
+  /// categories can disable auto-execution" is enforced, not just offered.
+  disableAutoExecution Boolean   @default(false)
+  isActive    Boolean            @default(true)
+  version     Int
+  isCurrent   Boolean            @default(true)
+  supersededAt DateTime?
+  /// Set while a retirement request is awaiting a decision, so a second
+  /// retirement request can't be opened concurrently for the same constraint.
+  pendingRetirementRequestId String?
+  createdByUserId String
+
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, category, version])
+  @@index([clientId, category, isCurrent])
+  @@map("compliance_constraints")
+}

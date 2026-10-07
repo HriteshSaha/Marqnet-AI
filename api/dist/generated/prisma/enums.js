@@ -1,0 +1,98 @@
+export const OrganizationType = {
+    AGENCY: 'AGENCY',
+    DIRECT_BRAND: 'DIRECT_BRAND'
+};
+export const SystemRoleKey = {
+    OWNER: 'OWNER',
+    ADMIN: 'ADMIN',
+    MEMBER: 'MEMBER'
+};
+export const PermissionAction = {
+    READ: 'READ',
+    CREATE: 'CREATE',
+    EDIT: 'EDIT',
+    DELETE: 'DELETE',
+    EXPORT: 'EXPORT',
+    MANAGE: 'MANAGE'
+};
+export const ClientStatus = {
+    ACTIVE: 'ACTIVE',
+    ARCHIVED: 'ARCHIVED'
+};
+export const ClientAccessScope = {
+    ALL: 'ALL',
+    RESTRICTED: 'RESTRICTED'
+};
+export const OnboardingStep = {
+    BUSINESS_PROFILE: 'BUSINESS_PROFILE',
+    GOALS_AND_KPIS: 'GOALS_AND_KPIS',
+    CHANNELS: 'CHANNELS',
+    AUDIENCE_AND_GEOGRAPHY: 'AUDIENCE_AND_GEOGRAPHY',
+    BUDGET: 'BUDGET',
+    COMPETITORS: 'COMPETITORS'
+};
+export const MarketingChannel = {
+    SEO: 'SEO',
+    GOOGLE_ADS: 'GOOGLE_ADS',
+    META_ADS: 'META_ADS',
+    MICROSOFT_ADS: 'MICROSOFT_ADS',
+    LINKEDIN_ADS: 'LINKEDIN_ADS',
+    TIKTOK_ADS: 'TIKTOK_ADS',
+    YOUTUBE_ADS: 'YOUTUBE_ADS',
+    EMAIL_MARKETING: 'EMAIL_MARKETING'
+};
+export const BusinessGoal = {
+    LEAD_GENERATION: 'LEAD_GENERATION',
+    ECOMMERCE_SALES: 'ECOMMERCE_SALES',
+    BRAND_AWARENESS: 'BRAND_AWARENESS',
+    APP_INSTALLS: 'APP_INSTALLS',
+    FOOT_TRAFFIC: 'FOOT_TRAFFIC',
+    CUSTOMER_RETENTION: 'CUSTOMER_RETENTION'
+};
+export const KpiType = {
+    CPA: 'CPA',
+    ROAS: 'ROAS',
+    REVENUE: 'REVENUE',
+    LEADS: 'LEADS',
+    TRAFFIC: 'TRAFFIC',
+    CONVERSION_RATE: 'CONVERSION_RATE',
+    BRAND_AWARENESS_LIFT: 'BRAND_AWARENESS_LIFT'
+};
+export const GuardrailMetric = {
+    CPA: 'CPA',
+    ROAS: 'ROAS',
+    REVENUE: 'REVENUE',
+    BUDGET: 'BUDGET',
+    LEAD_QUALITY_SCORE: 'LEAD_QUALITY_SCORE'
+};
+export const ComplianceCategory = {
+    REGULATED_INDUSTRY: 'REGULATED_INDUSTRY',
+    FINANCIAL_SERVICES: 'FINANCIAL_SERVICES',
+    HEALTHCARE: 'HEALTHCARE',
+    LEGAL: 'LEGAL',
+    ALCOHOL: 'ALCOHOL',
+    GAMBLING: 'GAMBLING',
+    CANNABIS: 'CANNABIS',
+    PROHIBITED_CLAIMS: 'PROHIBITED_CLAIMS',
+    PROHIBITED_KEYWORDS: 'PROHIBITED_KEYWORDS',
+    BRAND_RESTRICTION: 'BRAND_RESTRICTION',
+    DATA_PRIVACY: 'DATA_PRIVACY',
+    OTHER: 'OTHER'
+};
+export const RiskLevel = {
+    LOW: 'LOW',
+    MEDIUM: 'MEDIUM',
+    HIGH: 'HIGH',
+    CRITICAL: 'CRITICAL'
+};
+export const ApprovalRequestStatus = {
+    PENDING: 'PENDING',
+    APPROVED: 'APPROVED',
+    REJECTED: 'REJECTED',
+    CANCELLED: 'CANCELLED'
+};
+export const ApprovalDecisionValue = {
+    APPROVED: 'APPROVED',
+    REJECTED: 'REJECTED'
+};
+//# sourceMappingURL=enums.js.map

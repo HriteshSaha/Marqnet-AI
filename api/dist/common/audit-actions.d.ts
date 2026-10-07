@@ -1,0 +1,27 @@
+export declare const AuditAction: {
+    readonly ORGANIZATION_CREATED: "organization.created";
+    readonly CLIENT_CREATED: "client.created";
+    readonly CLIENT_ARCHIVED: "client.archived";
+    readonly CLIENT_RESTORED: "client.restored";
+    readonly LOGIN_SUCCEEDED: "auth.login_succeeded";
+    readonly LOGIN_FAILED: "auth.login_failed";
+    readonly MFA_ENABLED: "auth.mfa_enabled";
+    readonly MFA_DISABLED: "auth.mfa_disabled";
+    readonly SESSION_REVOKED: "auth.session_revoked";
+    readonly SESSION_REVOKED_ALL: "auth.session_revoked_all";
+    readonly PASSWORD_CHANGED: "auth.password_changed";
+    readonly ROLE_CREATED: "role.created";
+    readonly ROLE_UPDATED: "role.updated";
+    readonly ROLE_DELETED: "role.deleted";
+    readonly MEMBER_ROLE_CHANGED: "member.role_changed";
+    readonly CLIENT_ACCESS_UPDATED: "member.client_access_updated";
+    readonly APPROVAL_POLICY_UPDATED: "approval.policy_updated";
+    readonly APPROVAL_REQUESTED: "approval.requested";
+    readonly APPROVAL_DECISION_RECORDED: "approval.decision_recorded";
+    readonly ONBOARDING_STEP_SAVED: "client.onboarding_step_saved";
+    readonly KPI_GUARDRAIL_SET: "client.kpi_guardrail_set";
+    readonly COMPLIANCE_CONSTRAINT_CREATED: "client.compliance_constraint_created";
+    readonly COMPLIANCE_RETIREMENT_REQUESTED: "client.compliance_retirement_requested";
+    readonly COMPLIANCE_CONSTRAINT_RETIRED: "client.compliance_constraint_retired";
+};
+export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
